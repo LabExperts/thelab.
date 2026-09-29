@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lab Match - Scheikunde Spel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Donker lab thema */
+            color: white;
+            overflow: hidden; /* Voorkom scrollen tijdens slepen */
+            touch-action: none; /* Cruciaal voor mobiele drag and drop */
+        }
+
+        .element-font {
+            font-family: 'Space Mono', monospace;
+        }
+
+        /* Reageerbuisjes en Erlenmeyers */
+        .tube-container {
+            cursor: grab;
+            transition: transform 0.1s;
+        }
+        .tube-container:active {
+            cursor: grabbing;
+        }
+        
+        .erlenmeyer-container {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .erlenmeyer-container.highlight {
+            filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.8));
+            transform: scale(1.05);
+        }
+
+        /* Animaties */
+        @keyframes bubbleUp {
+            0% { transform: translateY(0) scale(0.5); opacity: 0.8; }
+            100% { transform: translateY(-80px) scale(1.5); opacity: 0; }
+        }
+        
+        /* Nieuwe Cartoon Boom Animatie */
+        @keyframes boomScale {
+            0% { transform: translate(-50%, -50%) scale(0) rotate(-10deg); opacity: 1; }
+            40% { transform: translate(-50%, -50%) scale(1.3) rotate(5deg); opacity: 1; }
+            60% { transform: translate(-50%, -50%) scale(1.1) rotate(-5deg); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 0; }
+        }
+        .cartoon-boom {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            animation: boomScale 0.8s forwards ease-out;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        /* Willekeurige Goede Effecten CSS */
+        .confetti { position: absolute; width: 10px; height: 10px; animation: confettiDrop 1s forwards ease-out; z-index: 20;}
+        @keyframes confettiDrop {
+            0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) rotate(720deg); opacity: 0; }
+        }
+
+        .rainbow-bg {
+            animation: rainbowFlash 1s forwards;
+        }
+        @keyframes rainbowFlash {
+            0% { filter: hue-rotate(0deg) drop-shadow(0 0 50px red); }
+            50% { filter: hue-rotate(180deg) drop-shadow(0 0 50px blue); }
+            100% { filter: hue-rotate(360deg) drop-shadow(0 0 0 transparent); }
+        }
+
+        .firework-particle { position: absolute; border-radius: 50%; animation: fireworkExplode 0.8s forwards ease-out; z-index: 20;}
+        @keyframes fireworkExplode {
+            0% { transform: translate(0,0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+        }
+
+        .glitter-star { position: absolute; animation: twinkle 1s forwards; z-index: 20; font-size: 24px; pointer-events: none;}
+        @keyframes twinkle {
+            0% { transform: scale(0) rotate(0deg); opacity: 0; }
+            50% { transform: scale(1.5) rotate(180deg); opacity: 1; filter: drop-shadow(0 0 10px yellow); }
+            100% { transform: scale(0) rotate(360deg); opacity: 0; }
+        }
+
+        .neon-lights { animation: neonPulse 1s forwards; }
+        @keyframes neonPulse {
+            0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+            20% { filter: drop-shadow(0 0 40px var(--neon-color)); }
+            40% { filter: drop-shadow(0 0 10px var(--neon-color)); }
+            60% { filter: drop-shadow(0 0 50px var(--neon-color)); }
+            80% { filter: drop-shadow(0 0 20px var(--neon-color)); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0) scale(1); }
+            20% { transform: translateX(-10px) scale(1.1); filter: brightness(0.5); }
+            40% { transform: translateX(10px) scale(1.1); filter: brightness(0.5); }
+            60% { transform: translateX(-10px) scale(1.1); filter: brightness(0.5); }
+            80% { transform: translateX(10px) scale(1.1); filter: brightness(0.5); }
+        }
+        .shake-explode {
+            animation: shake 0.5s ease-in-out;
+        }
+
+        @keyframes shatter {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5) rotate(15deg); filter: brightness(2); }
+            100% { transform: scale(0) rotate(-15deg); opacity: 0; }
+        }
+        .shatter-anim {
+            animation: shatter 0.5s forwards;
+        }
+
+        /* Drag status classes */
+        .dragging {
+            position: absolute !important;
+            z-index: 1000;
+            pointer-events: none; /* Laat de muis door het element klikken naar wat eronder zit (erlenmeyers) */
+            transition: none !important; /* Geen vertraging tijdens slepen */
+            filter: drop-shadow(0 10px 10px rgba(0,0,0,0.5));
+        }
+
+        .snapping {
+            transition: all 0.4s ease-out !important;
+        }
+
+        .pouring {
+            transition: all 0.5s ease-in-out !important;
+            transform-origin: center right;
+        }
+
+        /* Vloeistof straal - Nu gepositioneerd in de fles om 'stokje' te voorkomen */
+        .flask-stream {
+            position: absolute;
+            width: 8px;
+            height: 0;
+            background-color: inherit;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: height 0.3s;
+            border-radius: 4px;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col relative select-none">
+
+    <!-- Start Overlay (Ook nodig om Audio Context te starten) -->
+    <div id="start-screen" class="absolute inset-0 bg-gray-900 bg-opacity-95 z-50 flex flex-col items-center justify-center p-4 text-center">
+        <h1 class="text-5xl md:text-7xl font-bold mb-4 text-green-400 drop-shadow-lg">🧪 Lab Match ⚗️</h1>
+        <p class="text-lg md:text-xl text-gray-300 mb-8 max-w-lg">
+            Sleep de reageerbuisjes met scheikundige symbolen naar de erlenmeyers met de juiste Nederlandse naam. Maak je een fout? Dan ontploft de boel!
+        </p>
+        <button id="start-btn" class="bg-green-500 hover:bg-green-400 text-gray-900 font-bold py-4 px-8 rounded-full text-2xl shadow-lg transition-transform transform hover:scale-110">
+            Start Spel
+        </button>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="game-over-screen" class="absolute inset-0 bg-red-900 bg-opacity-95 z-50 flex flex-col items-center justify-center hidden">
+        <h1 class="text-6xl font-bold mb-4 text-white drop-shadow-lg">KABOEM!</h1>
+        <p class="text-2xl text-gray-200 mb-8">Je veiligheidsbrillen zijn op...</p>
+        <p class="text-xl text-gray-300 mb-8">Eindscore: <span id="final-score" class="font-bold text-yellow-400">0</span></p>
+        <button id="restart-btn" class="bg-white hover:bg-gray-200 text-red-900 font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-transform transform hover:scale-110">
+            Probeer Opnieuw
+        </button>
+    </div>
+
+    <!-- Level Complete Overlay -->
+    <div id="level-complete-screen" class="absolute inset-0 bg-blue-900 bg-opacity-95 z-50 flex flex-col items-center justify-center hidden">
+        <h1 class="text-6xl font-bold mb-4 text-white drop-shadow-lg">Netjes!</h1>
+        <p class="text-2xl text-gray-200 mb-8">Level voltooid. Maak je klaar voor de volgende reacties.</p>
+        <button id="next-level-btn" class="bg-blue-500 hover:bg-blue-400 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-transform transform hover:scale-110">
+            Volgend Level
+        </button>
+    </div>
+
+    <!-- Header UI -->
+    <header class="w-full p-4 bg-gray-800 shadow-md flex justify-between items-center z-10 border-b-4 border-gray-700">
+        <div class="flex flex-col">
+            <span class="text-gray-400 text-sm font-bold uppercase tracking-wider">Level <span id="ui-level">1</span></span>
+            <span class="text-2xl font-bold text-yellow-400">Score: <span id="ui-score">0</span></span>
+        </div>
+        <div class="flex flex-col items-end">
+            <span class="text-gray-400 text-sm font-bold uppercase tracking-wider mb-1">Veiligheid</span>
+            <div id="ui-lives" class="flex gap-2 text-3xl">
+                <!-- Brillen worden hier via JS ingeladen -->
+            </div>
+        </div>
+    </header>
+
+    <!-- Game Area -->
+    <main class="flex-1 flex flex-col md:flex-row relative p-4 gap-8">
+        
+        <!-- Reageerbuis Rek (Links/Boven) -->
+        <section class="w-full md:w-1/3 h-1/3 md:h-full flex flex-col items-center justify-center bg-gray-800 rounded-2xl shadow-inner border border-gray-700 p-4 relative">
+            <h2 class="text-gray-500 font-bold uppercase tracking-widest mb-4 absolute top-4">Reageerbuisjes</h2>
+            <!-- Planken / Houder -->
+            <div class="w-full max-w-sm h-4 bg-gray-600 rounded-full absolute bottom-[15%] md:bottom-[25%] shadow-md"></div>
+            
+            <div id="tube-rack" class="flex flex-row flex-wrap md:flex-col md:flex-nowrap gap-4 md:gap-8 justify-center items-center w-full z-10 h-full pb-10 md:pb-0">
+                <!-- Reageerbuisjes worden hier gegenereerd -->
+            </div>
+        </section>
+
+        <!-- Werktafel / Erlenmeyers (Rechts/Onder) -->
+        <section class="w-full md:w-2/3 h-2/3 md:h-full flex flex-col items-center justify-end md:justify-center bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 relative overflow-hidden">
+            <h2 class="text-gray-600 font-bold uppercase tracking-widest mb-4 absolute top-4">Mengtafel</h2>
+            
+            <!-- Tafel graphics -->
+            <div class="absolute bottom-0 w-full h-1/4 bg-gradient-to-t from-gray-800 to-transparent opacity-50 pointer-events-none"></div>
+            <div class="absolute bottom-10 w-11/12 h-2 bg-gray-700 rounded-full blur-[2px] pointer-events-none"></div>
+
+            <div id="flask-table" class="flex flex-row flex-wrap gap-8 justify-center items-end w-full pb-12 z-10">
+                <!-- Erlenmeyers worden hier gegenereerd -->
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // --- Spel Data & Logica ---
+        const levels = [
+            // Level 1: Makkelijk / Intuïtief
+            [
+                { sym: 'O', name: 'Zuurstof', color: '#00F0FF' }, // Fel Cyaan
+                { sym: 'C', name: 'Koolstof', color: '#FF3366' }, // Vrolijk Kersenroze
+                { sym: 'Ne', name: 'Neon', color: '#A8FF3E' },    // Limoengroen
+                { sym: 'Al', name: 'Aluminium', color: '#B088FF' } // Zacht Paars
+            ],
+            // Level 2: Latijnse afwijkingen (Kleuren verraden niets meer)
+            [
+                { sym: 'Fe', name: 'IJzer', color: '#FFAA00' },   // Zonnig Oranje
+                { sym: 'Au', name: 'Goud', color: '#20E3B2' },    // Muntgroen (zeker geen goudkleur!)
+                { sym: 'Ag', name: 'Zilver', color: '#FF61D2' },  // Zuurstok Roze
+                { sym: 'Na', name: 'Natrium', color: '#4A90E2' }  // Helder Blauw
+            ],
+            // Level 3: Moeilijker
+            [
+                { sym: 'Pb', name: 'Lood', color: '#00FF9D' },    // Neon Zeegroen
+                { sym: 'Hg', name: 'Kwik', color: '#9D4EDD' },    // Diep Vrolijk Paars
+                { sym: 'W', name: 'Wolfram', color: '#FFD700' },  // Goudgeel
+                { sym: 'Sn', name: 'Tin', color: '#FF8C42' }      // Perzik/Koraal
+            ]
+        ];
+
+        let currentLevelIndex = 0;
+        let score = 0;
+        let lives = 3;
+        let matchedInLevel = 0;
+        let isAnimating = false; // Blokkeer input tijdens animaties
+
+        // Audio variabelen (Tone.js)
+        let synth, noiseSynth, membraneSynth;
+
+        // DOM Elementen
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const levelCompleteScreen = document.getElementById('level-complete-screen');
+        const uiScore = document.getElementById('ui-score');
+        const uiLevel = document.getElementById('ui-level');
+        const uiLives = document.getElementById('ui-lives');
+        const finalScoreSpan = document.getElementById('final-score');
+        
+        const tubeRack = document.getElementById('tube-rack');
+        const flaskTable = document.getElementById('flask-table');
+
+        // Drag state
+        let draggedTube = null;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let tubeOriginRect = null;
+
+        // --- STREAMING_CHUNK: Initialisatie en Audio Setup ---
+
+        function initAudio() {
+            // Basis synth voor bubbels/succes
+            synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 1 }
+            }).toDestination();
+            synth.volume.value = -10;
+
+            // Membrane synth voor "plop" geluiden
+            membraneSynth = new Tone.MembraneSynth().toDestination();
+            
+            // Noise synth voor explosies
+            noiseSynth = new Tone.NoiseSynth({
+                noise: { type: 'brown' },
+                envelope: { attack: 0.01, decay: 0.6, sustain: 0, release: 0.5 }
+            }).toDestination();
+            noiseSynth.volume.value = -5;
+        }
+
+        function playSizzle() {
+            if(!synth) return;
+            // Speel een vrolijk arpeggio/plop geluid
+            const now = Tone.now();
+            synth.triggerAttackRelease("C5", "32n", now);
+            synth.triggerAttackRelease("E5", "32n", now + 0.1);
+            synth.triggerAttackRelease("G5", "32n", now + 0.2);
+            synth.triggerAttackRelease("C6", "16n", now + 0.3);
+            membraneSynth.triggerAttackRelease("G4", "16n", now + 0.4);
+        }
+
+        function playExplosion() {
+            if(!noiseSynth) return;
+            
+            // Hardere en lagere cartoon BOOM sound
+            noiseSynth.volume.value = 5;
+            noiseSynth.triggerAttackRelease("4n");
+            
+            membraneSynth.volume.value = 8;
+            membraneSynth.triggerAttackRelease("C1", "2n");
+            
+            // Reset volume terug naar normaal voor volgende geluiden
+            setTimeout(() => {
+                noiseSynth.volume.value = -5;
+                membraneSynth.volume.value = 0;
+            }, 1000);
+        }
+
+        function playShatter() {
+            if(!synth) return;
+            synth.triggerAttackRelease("C6", "32n");
+            synth.triggerAttackRelease("C#6", "32n", Tone.now() + 0.05);
+        }
+
+        // --- STREAMING_CHUNK: Game Flow (Start, Render, Reset) ---
+
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            await Tone.start(); // Vereist door browsers
+            initAudio();
+            startScreen.classList.add('hidden');
+            resetGame();
+        });
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            gameOverScreen.classList.add('hidden');
+            resetGame();
+        });
+
+        document.getElementById('next-level-btn').addEventListener('click', () => {
+            levelCompleteScreen.classList.add('hidden');
+            currentLevelIndex++;
+            if (currentLevelIndex >= levels.length) {
+                // Game uitgespeeld, herstart met behoud van score maar sneller/moeilijker (of gewoon loop)
+                currentLevelIndex = 0; 
+            }
+            startLevel();
+        });
+
+        function resetGame() {
+            currentLevelIndex = 0;
+            score = 0;
+            lives = 3;
+            updateUI();
+            startLevel();
+        }
+
+        function updateUI() {
+            uiScore.innerText = score;
+            uiLevel.innerText = currentLevelIndex + 1;
+            
+            uiLives.innerHTML = '';
+            for(let i=0; i<3; i++) {
+                const bril = document.createElement('span');
+                bril.innerText = '🥽';
+                bril.id = `life-${i}`;
+                if (i >= lives) {
+                    bril.style.opacity = '0.2';
+                    bril.style.filter = 'grayscale(100%)';
+                }
+                uiLives.appendChild(bril);
+            }
+        }
+
+        // Helper functie om arrays te husselen (Fisher-Yates)
+        function shuffleArray(array) {
+            const arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // --- STREAMING_CHUNK: SVGs genereren ---
+
+        function createTestTubeSVG(symbol, color) {
+            return `
+            <div class="relative flex flex-col items-center">
+                <svg width="40" height="100" viewBox="0 0 40 100" class="drop-shadow-lg">
+                    <!-- Achterkant glas -->
+                    <rect x="5" y="5" width="30" height="90" rx="15" fill="#f0fdfa" opacity="0.3" stroke="#94a3b8" stroke-width="2"/>
+                    <!-- Vloeistof -->
+                    <rect x="7" y="40" width="26" height="53" rx="12" fill="${color}" opacity="0.9"/>
+                    <!-- Reflectie -->
+                    <rect x="10" y="10" width="6" height="75" rx="3" fill="#ffffff" opacity="0.4"/>
+                    <!-- Dop/Rand -->
+                    <rect x="2" y="5" width="36" height="6" rx="2" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1"/>
+                </svg>
+                <div class="absolute inset-0 flex items-center justify-center pt-4 pointer-events-none">
+                    <span class="element-font text-white font-bold text-xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">${symbol}</span>
+                </div>
+            </div>`;
+        }
+
+        function createFlaskSVG(name) {
+            return `
+            <div class="relative flex flex-col items-center">
+                <svg width="80" height="110" viewBox="0 0 100 120" class="drop-shadow-xl flask-svg transition-colors duration-500">
+                    <defs>
+                        <linearGradient id="glass" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2" />
+                            <stop offset="20%" stop-color="#ffffff" stop-opacity="0.6" />
+                            <stop offset="100%" stop-color="#ffffff" stop-opacity="0.1" />
+                        </linearGradient>
+                    </defs>
+                    <!-- Vloeistof pad (standaard doorzichtig/leeg) -->
+                    <path class="liquid-fill" d="M 40 40 L 60 40 L 85 100 A 15 15 0 0 1 70 115 L 30 115 A 15 15 0 0 1 15 100 Z" fill="transparent" opacity="0.8"/>
+                    <!-- Glas omtrek -->
+                    <path d="M 35 5 L 65 5 L 65 10 L 55 10 L 55 40 L 85 100 A 15 15 0 0 1 70 115 L 30 115 A 15 15 0 0 1 15 100 L 45 40 L 45 10 L 35 10 Z" fill="url(#glass)" stroke="#cbd5e1" stroke-width="3"/>
+                    <!-- Maatstreepjes -->
+                    <line x1="25" y1="80" x2="35" y2="80" stroke="#cbd5e1" stroke-width="2"/>
+                    <line x1="22" y1="95" x2="30" y2="95" stroke="#cbd5e1" stroke-width="2"/>
+                </svg>
+                <!-- Label -->
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 translate-y-4 bg-white px-2 py-1 rounded border-2 border-gray-300 shadow-sm">
+                    <span class="text-gray-800 font-bold text-sm pointer-events-none">${name}</span>
+                </div>
+            </div>`;
+        }
+
+        // --- STREAMING_CHUNK: Level rendering ---
+
+        function startLevel() {
+            matchedInLevel = 0;
+            tubeRack.innerHTML = '';
+            flaskTable.innerHTML = '';
+            updateUI();
+
+            const levelData = levels[currentLevelIndex];
+            
+            // Maak reageerbuisjes (geshuffeld)
+            const tubes = shuffleArray(levelData);
+            tubes.forEach(item => {
+                const tubeEl = document.createElement('div');
+                tubeEl.className = 'tube-container p-2';
+                tubeEl.dataset.symbol = item.sym;
+                tubeEl.dataset.color = item.color;
+                tubeEl.innerHTML = createTestTubeSVG(item.sym, item.color);
+                
+                // Event listeners voor drag
+                tubeEl.addEventListener('mousedown', dragStart);
+                tubeEl.addEventListener('touchstart', dragStart, {passive: false});
+                
+                tubeRack.appendChild(tubeEl);
+            });
+
+            // Maak Erlenmeyers (geshuffeld)
+            const flasks = shuffleArray(levelData);
+            flasks.forEach(item => {
+                const flaskEl = document.createElement('div');
+                flaskEl.className = 'erlenmeyer-container p-2';
+                flaskEl.dataset.symbol = item.sym; // Bewaar symbool voor check
+                flaskEl.innerHTML = createFlaskSVG(item.name);
+                flaskTable.appendChild(flaskEl);
+            });
+        }
+
+        // --- STREAMING_CHUNK: Drag & Drop Logica ---
+
+        function getEventPos(e) {
+            if (e.touches && e.touches.length > 0) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function dragStart(e) {
+            if (isAnimating) return; // Niet oppakken tijdens animaties
+            e.preventDefault(); // Voorkom scrollen op mobiel
+            
+            draggedTube = e.currentTarget;
+            tubeOriginRect = draggedTube.getBoundingClientRect();
+            
+            const pos = getEventPos(e);
+            dragStartX = pos.x;
+            dragStartY = pos.y;
+
+            // Positioneer absoluut voor slepen
+            draggedTube.classList.add('dragging');
+            draggedTube.style.left = tubeOriginRect.left + 'px';
+            draggedTube.style.top = tubeOriginRect.top + 'px';
+            draggedTube.style.width = tubeOriginRect.width + 'px';
+            draggedTube.style.height = tubeOriginRect.height + 'px';
+            
+            // Verplaats naar body voor vrije beweging over containers heen
+            document.body.appendChild(draggedTube);
+
+            // Bind globale events
+            document.addEventListener('mousemove', dragMove);
+            document.addEventListener('mouseup', dragEnd);
+            document.addEventListener('touchmove', dragMove, {passive: false});
+            document.addEventListener('touchend', dragEnd);
+        }
+
+        function dragMove(e) {
+            if (!draggedTube) return;
+            e.preventDefault();
+
+            const pos = getEventPos(e);
+            const dx = pos.x - dragStartX;
+            const dy = pos.y - dragStartY;
+
+            draggedTube.style.left = (tubeOriginRect.left + dx) + 'px';
+            draggedTube.style.top = (tubeOriginRect.top + dy) + 'px';
+
+            // Check hover over erlenmeyers
+            checkHoverTargets(pos.x, pos.y);
+        }
+
+        function checkHoverTargets(mouseX, mouseY) {
+            const flasks = document.querySelectorAll('.erlenmeyer-container');
+            flasks.forEach(f => f.classList.remove('highlight'));
+
+            for (let f of flasks) {
+                const rect = f.getBoundingClientRect();
+                // Simpele collision box check
+                if (mouseX > rect.left && mouseX < rect.right &&
+                    mouseY > rect.top && mouseY < rect.bottom) {
+                    f.classList.add('highlight');
+                    break; // Highlight er maar 1
+                }
+            }
+        }
+
+        // --- STREAMING_CHUNK: Drag End & Evaluatie ---
+
+        function dragEnd(e) {
+            if (!draggedTube) return;
+            e.preventDefault();
+
+            // Verwijder globale events
+            document.removeEventListener('mousemove', dragMove);
+            document.removeEventListener('mouseup', dragEnd);
+            document.removeEventListener('touchmove', dragMove);
+            document.removeEventListener('touchend', dragEnd);
+
+            const pos = getEventPos(e.changedTouches ? e.changedTouches[0] : e);
+            let targetFlask = null;
+
+            // Zoek uit of we boven een erlenmeyer zijn geëindigd
+            const flasks = document.querySelectorAll('.erlenmeyer-container');
+            for (let f of flasks) {
+                f.classList.remove('highlight');
+                const rect = f.getBoundingClientRect();
+                if (pos.x > rect.left && pos.x < rect.right &&
+                    pos.y > rect.top && pos.y < rect.bottom) {
+                    targetFlask = f;
+                    break;
+                }
+            }
+
+            if (targetFlask) {
+                // We hebben een doelwit! Start animatie
+                processDrop(draggedTube, targetFlask);
+            } else {
+                // Zweef terug naar rekje
+                snapBack(draggedTube);
+            }
+            
+            draggedTube = null;
+        }
+
+        function snapBack(element) {
+            isAnimating = true;
+            element.classList.remove('dragging');
+            element.classList.add('snapping');
+            
+            // Bereken waar hij heen moet in theorie, 
+            // Makkelijkste: we zetten hem gewoon terug in de DOM flow en laten CSS de transitie doen
+            // Omdat we absolute pos gebruikten op body, moeten we foefelen:
+            
+            element.style.left = tubeOriginRect.left + 'px';
+            element.style.top = tubeOriginRect.top + 'px';
+
+            setTimeout(() => {
+                element.classList.remove('snapping');
+                element.style.position = '';
+                element.style.left = '';
+                element.style.top = '';
+                element.style.width = '';
+                element.style.height = '';
+                tubeRack.appendChild(element); // Terug in rek
+                isAnimating = false;
+            }, 400);
+        }
+
+        // --- STREAMING_CHUNK: Giet animatie en resultaat ---
+
+        function processDrop(tube, flask) {
+            isAnimating = true;
+            const flaskRect = flask.getBoundingClientRect();
+            
+            // 1. Positioneer buisje boven de fles
+            tube.classList.add('snapping');
+            tube.style.left = (flaskRect.left + flaskRect.width/2 - tubeOriginRect.width/2) + 'px';
+            tube.style.top = (flaskRect.top - tubeOriginRect.height + 20) + 'px';
+
+            setTimeout(() => {
+                // 2. Kantel 90 graden om te gieten
+                tube.classList.remove('snapping');
+                tube.classList.add('pouring');
+                tube.style.transform = 'rotate(-100deg)';
+
+                // Voeg visuele straal toe aan de Erlenmeyer i.p.v. het buisje!
+                const stream = document.createElement('div');
+                stream.className = 'flask-stream';
+                stream.style.backgroundColor = tube.dataset.color;
+                flask.appendChild(stream);
+                
+                setTimeout(() => {
+                    stream.style.height = '60px'; // Stroomt naar beneden de fles in
+                }, 50);
+
+                setTimeout(() => {
+                    // 3. Evalueer resultaat na gieten
+                    evaluateMatch(tube, flask);
+                }, 600); // Tijd voor giet animatie
+
+            }, 400); // Tijd voor positionering
+        }
+
+        function evaluateMatch(tube, flask) {
+            const isMatch = tube.dataset.symbol === flask.dataset.symbol;
+            const flaskSVG = flask.querySelector('.liquid-fill');
+            const stream = flask.querySelector('.flask-stream'); // Verwijzing naar de straal
+
+            if (isMatch) {
+                // GOED
+                playSizzle();
+                score += 100;
+                matchedInLevel++;
+                
+                // Kleur fles
+                flaskSVG.setAttribute('fill', tube.dataset.color);
+                
+                // Activeer één van de 5 willekeurige feest effecten!
+                playRandomGoodEffect(flask, tube.dataset.color);
+
+                // Ruim op
+                setTimeout(() => {
+                    if(stream) stream.remove();
+                    tube.remove();
+                    flask.style.transform = 'scale(0)';
+                    flask.style.opacity = '0';
+                    setTimeout(() => flask.remove(), 300);
+                    
+                    checkLevelEnd();
+                    isAnimating = false;
+                }, 1000);
+
+            } else {
+                // FOUT
+                playExplosion();
+                
+                // Effecten
+                flaskSVG.setAttribute('fill', '#000000');
+                flask.classList.add('shake-explode');
+                createBoom(flask); // Nieuwe Cartoon Boom!
+
+                lives--;
+                breakGoggle();
+
+                setTimeout(() => {
+                    flask.classList.remove('shake-explode');
+                    flaskSVG.setAttribute('fill', 'transparent'); // Reset vloeistof
+                    if(stream) stream.remove(); // Verwijder de straal
+                    
+                    if (lives <= 0) {
+                        tube.remove(); // Buisje netjes weghalen bij game over
+                        gameOver();
+                    } else {
+                        // Buisje terug naar rek
+                        tube.style.transform = 'rotate(0deg)';
+                        tube.classList.remove('pouring');
+                        snapBack(tube);
+                        
+                        // Hussel resterende buisjes in rekje voor extra stress
+                        shuffleRemainingTubes();
+                    }
+                }, 800);
+            }
+            updateUI();
+        }
+
+        // --- STREAMING_CHUNK: Visuele Effecten & Game State ---
+
+        function playRandomGoodEffect(flask, color) {
+            const effects = ['confetti', 'rainbow', 'fireworks', 'glitters', 'lights'];
+            const effect = effects[Math.floor(Math.random() * effects.length)];
+            
+            if (effect === 'confetti') {
+                for(let i=0; i<30; i++) {
+                    const conf = document.createElement('div');
+                    conf.className = 'confetti rounded-sm';
+                    const colors = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#c084fc', color];
+                    conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                    conf.style.setProperty('--dx', (Math.random() * 200 - 100) + 'px');
+                    conf.style.setProperty('--dy', (Math.random() * -200 - 50) + 'px');
+                    conf.style.left = '50%';
+                    conf.style.top = '50%';
+                    flask.appendChild(conf);
+                    setTimeout(() => conf.remove(), 1000);
+                }
+            } else if (effect === 'rainbow') {
+                flask.classList.add('rainbow-bg');
+                setTimeout(() => flask.classList.remove('rainbow-bg'), 1000);
+            } else if (effect === 'fireworks') {
+                for(let i=0; i<40; i++) {
+                    const fw = document.createElement('div');
+                    fw.className = 'firework-particle';
+                    fw.style.backgroundColor = color;
+                    fw.style.width = (Math.random() * 6 + 3) + 'px';
+                    fw.style.height = fw.style.width;
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = Math.random() * 120 + 30;
+                    fw.style.setProperty('--dx', (Math.cos(angle) * distance) + 'px');
+                    fw.style.setProperty('--dy', (Math.sin(angle) * distance) + 'px');
+                    fw.style.left = '50%';
+                    fw.style.top = '50%';
+                    flask.appendChild(fw);
+                    setTimeout(() => fw.remove(), 800);
+                }
+            } else if (effect === 'glitters') {
+                for(let i=0; i<15; i++) {
+                    const star = document.createElement('div');
+                    star.className = 'glitter-star';
+                    star.innerHTML = '✨';
+                    star.style.left = (Math.random() * 140 - 20) + '%';
+                    star.style.top = (Math.random() * 140 - 20) + '%';
+                    star.style.animationDelay = (Math.random() * 0.3) + 's';
+                    flask.appendChild(star);
+                    setTimeout(() => star.remove(), 1000);
+                }
+            } else if (effect === 'lights') {
+                flask.style.setProperty('--neon-color', color);
+                flask.classList.add('neon-lights');
+                setTimeout(() => flask.classList.remove('neon-lights'), 1000);
+            }
+        }
+
+        function createBoom(parentEl) {
+            const boom = document.createElement('div');
+            boom.className = 'cartoon-boom';
+            boom.innerHTML = `
+                <svg width="200" height="200" viewBox="0 0 100 100" class="drop-shadow-2xl">
+                    <!-- Boom Wolk / Explosie -->
+                    <path d="M50 5 L65 30 L95 25 L80 45 L98 70 L70 75 L65 98 L50 80 L35 98 L30 75 L2 70 L20 45 L5 25 L35 30 Z" fill="#ef4444" stroke="#fef08a" stroke-width="4" stroke-linejoin="round"/>
+                    <!-- Oranje Binnenkant -->
+                    <path d="M50 15 L60 35 L85 30 L72 45 L85 65 L65 68 L60 85 L50 72 L40 85 L35 68 L15 65 L28 45 L15 30 L40 35 Z" fill="#f97316"/>
+                    <!-- Tekst -->
+                    <text x="50" y="55" font-family="'Space Mono', monospace" font-size="22" font-weight="900" fill="#fef08a" text-anchor="middle" dominant-baseline="middle" transform="rotate(-5, 50, 50)">BOOM!</text>
+                </svg>
+            `;
+            parentEl.appendChild(boom);
+            setTimeout(() => boom.remove(), 800);
+        }
+
+        function breakGoggle() {
+            const goggle = document.getElementById(`life-${lives}`);
+            if (goggle) {
+                playShatter();
+                goggle.classList.add('shatter-anim');
+            }
+        }
+
+        function shuffleRemainingTubes() {
+            const remaining = Array.from(tubeRack.children);
+            const shuffled = shuffleArray(remaining);
+            tubeRack.innerHTML = '';
+            shuffled.forEach(t => tubeRack.appendChild(t));
+        }
+
+        function checkLevelEnd() {
+            if (matchedInLevel === levels[currentLevelIndex].length) {
+                setTimeout(() => {
+                    levelCompleteScreen.classList.remove('hidden');
+                }, 500);
+            }
+        }
+
+        function gameOver() {
+            isAnimating = false;
+            finalScoreSpan.innerText = score;
+            gameOverScreen.classList.remove('hidden');
+        }
+
+    </script>
+</body>
+</html>
